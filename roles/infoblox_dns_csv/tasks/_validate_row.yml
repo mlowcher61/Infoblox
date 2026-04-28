@@ -55,7 +55,13 @@
     - (row.record_type | default('') | upper) == 'A'
     - row.value | default('') | ansible.utils.ipv4 | length == 0
 
-# TODO: add a similar block for AAAA (use the ansible.utils.ipv6 filter)
+- name: "AAAA-record value must be IPv6 — line {{ row.__lineno__ }}"
+  ansible.builtin.set_fact:
+    _row_errors: "{{ _row_errors | default([]) + ['value ' ~ row.value ~ ' is not a valid IPv6 address'] }}"
+  when:
+    - (row.record_type | default('') | upper) == 'AAAA'
+    - row.value | default('') | ansible.utils.ipv6 | length == 0
+
 # TODO: add a block for CNAME asserting `value` looks like a hostname
 # TODO: add a block for PTR asserting `name` ends in arpa
 # TODO: add a block for MX asserting `priority` is an int 0..65535
