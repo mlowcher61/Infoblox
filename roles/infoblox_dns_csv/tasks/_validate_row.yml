@@ -62,13 +62,81 @@
     - (row.record_type | default('') | upper) == 'AAAA'
     - row.value | default('') | ansible.utils.ipv6 | length == 0
 
-# TODO: add a block for CNAME asserting `value` looks like a hostname
-# TODO: add a block for PTR asserting `name` ends in arpa
-# TODO: add a block for MX asserting `priority` is an int 0..65535
-# TODO: add a block for SRV asserting priority/weight/port are ints
-# TODO: add a block for HOST allowing IPv4 OR IPv6 in `value`
-# TODO: add a block for NAPTR asserting order/preference are ints
-# (delete the TODOs once the corresponding block is in place)
+# NB: regex_search returns the match string on hit, '' on miss — `not` inverts cleanly.
+
+- name: "CNAME value must look like a hostname — line {{ row.__lineno__ }}"
+  ansible.builtin.set_fact:
+    _row_errors: "{{ _row_errors | default([]) + ['value ' ~ row.value ~ ' is not a valid hostname'] }}"
+  vars:
+    _hostname_re: '^([a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)*[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.?$'
+  when:
+    - (row.record_type | default('') | upper) == 'CNAME'
+    - not (row.value | default('') | regex_search(_hostname_re))
+
+- name: "PTR name must end in .in-addr.arpa or .ip6.arpa — line {{ row.__lineno__ }}"
+  ansible.builtin.set_fact:
+    _row_errors: "{{ _row_errors | default([]) + ['name ' ~ row.name ~ ' is not a reverse-DNS zone name'] }}"
+  when:
+    - (row.record_type | default('') | upper) == 'PTR'
+    - not (row.name | default('') | regex_search('\.(in-addr\.arpa|ip6\.arpa)\.?$'))
+
+- name: "MX priority must be an int 0..65535 — line {{ row.__lineno__ }}"
+  ansible.builtin.set_fact:
+    _row_errors: >-
+      {{ _row_errors | default([])
+         + ['priority ' ~ (row.priority | default('')) ~ ' is not an int in 0..65535'] }}
+  when: >-
+    (row.record_type | default('') | upper) == 'MX'
+    and (
+      not (row.priority | default('') | regex_search('^[0-9]+$'))
+      or (row.priority | int) < 0
+      or (row.priority | int) > 65535
+    )
+
+# Suggested SRV column convention (see contribution point #2): priority=priority, extra1=weight, extra2=port.
+- name: "SRV priority, weight (extra1), port (extra2) must be ints — line {{ row.__lineno__ }}"
+  ansible.builtin.set_fact:
+    _row_errors: >-
+      {{ _row_errors | default([])
+         + ['SRV needs int priority/weight(extra1)/port(extra2); got '
+            ~ (row.priority | default('')) ~ '/'
+            ~ (row.extra1   | default('')) ~ '/'
+            ~ (row.extra2   | default(''))] }}
+  when: >-
+    (row.record_type | default('') | upper) == 'SRV'
+    and (
+      not (row.priority | default('') | regex_search('^[0-9]+$'))
+      or not (row.extra1 | default('') | regex_search('^[0-9]+$'))
+      or not (row.extra2 | default('') | regex_search('^[0-9]+$'))
+    )
+
+# HOST `value` may be one IP or a comma-separated mix. Every entry must parse as v4 or v6.
+- name: "HOST value must be IPv4, IPv6, or comma-separated mix — line {{ row.__lineno__ }}"
+  ansible.builtin.set_fact:
+    _row_errors: >-
+      {{ _row_errors | default([])
+         + ['value ' ~ row.value ~ ' contains entries that are neither IPv4 nor IPv6'] }}
+  vars:
+    _addrs: "{{ row.value | default('') | split(',') | map('trim') | reject('equalto', '') | list }}"
+    _good_count: "{{ (_addrs | ansible.utils.ipv4 | length) + (_addrs | ansible.utils.ipv6 | length) }}"
+  when:
+    - (row.record_type | default('') | upper) == 'HOST'
+    - (_addrs | length == 0) or ((_good_count | int) != (_addrs | length))
+
+# Suggested NAPTR column convention: priority=order, extra1=preference.
+- name: "NAPTR order (priority) and preference (extra1) must be ints — line {{ row.__lineno__ }}"
+  ansible.builtin.set_fact:
+    _row_errors: >-
+      {{ _row_errors | default([])
+         + ['NAPTR needs int order(priority)/preference(extra1); got '
+            ~ (row.priority | default('')) ~ '/'
+            ~ (row.extra1   | default(''))] }}
+  when: >-
+    (row.record_type | default('') | upper) == 'NAPTR'
+    and (
+      not (row.priority | default('') | regex_search('^[0-9]+$'))
+      or not (row.extra1 | default('') | regex_search('^[0-9]+$'))
+    )
 
 - name: "Record validation outcome — line {{ row.__lineno__ }}"
   ansible.builtin.set_fact:
