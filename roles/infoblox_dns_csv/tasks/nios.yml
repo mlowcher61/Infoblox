@@ -1,0 +1,14 @@
+---
+# Dispatch loop for NIOS Grid platform.
+# Iterates rows that passed validation and calls _nios_record.yml
+# for each, which actually invokes the per-record-type module.
+
+- name: NIOS — apply each validated row
+  ansible.builtin.include_tasks: _nios_record.yml
+  loop: "{{ dns_csv_rows }}"
+  loop_control:
+    loop_var: row
+    label: "line {{ row.__lineno__ }} — {{ row.record_type | upper }} {{ row.name }}"
+  when:
+    # skip rows that already failed validation
+    - (dns_results | selectattr('row', 'equalto', row.__lineno__) | first).status != 'failed'

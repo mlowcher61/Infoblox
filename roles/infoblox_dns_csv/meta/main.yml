@@ -1,0 +1,22 @@
+---
+galaxy_info:
+  role_name: infoblox_dns_csv
+  namespace: mlowcher61
+  author: mlowcher61
+  description: Manage Infoblox DNS records (NIOS or Universal DDI) from a CSV file.
+  license: MIT
+  min_ansible_version: "2.15"
+  platforms:
+    - name: EL
+      versions:
+        - "9"
+  galaxy_tags:
+    - infoblox
+    - dns
+    - networking
+    - csv
+    - nios
+    - ddi
+    - aap
+
+dependencies: []

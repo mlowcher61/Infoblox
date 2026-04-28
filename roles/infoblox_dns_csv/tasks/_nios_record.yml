@@ -1,0 +1,203 @@
+---
+# Apply ONE validated CSV row against NIOS.
+#
+# Strategy: build a `_module_args` dict whose shape matches the
+# specific nios_*_record module's parameters, then call the module
+# via ansible.builtin.include_tasks indirection. We can't dynamically
+# pick a module name in a single task (no `module: "{{ var }}"`), so
+# we set a fact and dispatch with `action`/`module_defaults` doesn't
+# help here either — we use a per-type when-block instead. The result
+# of every branch is the same `_apply` register, captured uniformly.
+
+- name: "Build common NIOS module args — line {{ row.__lineno__ }}"
+  ansible.builtin.set_fact:
+    _common_args:
+      name: "{{ row.name }}"
+      view: "{{ row.view | default(dns_default_view, true) }}"
+      comment: "{{ row.comment | default(omit, true) }}"
+      ttl: "{{ row.ttl | default(dns_default_ttl, true) | default(omit, true) }}"
+      state: "{{ row.state | default('present', true) }}"
+    _rt: "{{ row.record_type | upper }}"
+
+# ─── A ────────────────────────────────────────────────────────────────
+- name: "NIOS A record — line {{ row.__lineno__ }}"
+  infoblox.nios_modules.nios_a_record:
+    name: "{{ _common_args.name }}"
+    ipv4addr: "{{ row.value }}"
+    view: "{{ _common_args.view }}"
+    comment: "{{ _common_args.comment }}"
+    ttl: "{{ _common_args.ttl }}"
+    state: "{{ _common_args.state }}"
+  register: _apply
+  when:
+    - _rt == 'A'
+    - not dns_dry_run
+
+# ─── AAAA ─────────────────────────────────────────────────────────────
+- name: "NIOS AAAA record — line {{ row.__lineno__ }}"
+  infoblox.nios_modules.nios_aaaa_record:
+    name: "{{ _common_args.name }}"
+    ipv6addr: "{{ row.value }}"
+    view: "{{ _common_args.view }}"
+    comment: "{{ _common_args.comment }}"
+    ttl: "{{ _common_args.ttl }}"
+    state: "{{ _common_args.state }}"
+  register: _apply
+  when:
+    - _rt == 'AAAA'
+    - not dns_dry_run
+
+# ─── CNAME ────────────────────────────────────────────────────────────
+- name: "NIOS CNAME record — line {{ row.__lineno__ }}"
+  infoblox.nios_modules.nios_cname_record:
+    name: "{{ _common_args.name }}"
+    canonical: "{{ row.value }}"
+    view: "{{ _common_args.view }}"
+    comment: "{{ _common_args.comment }}"
+    ttl: "{{ _common_args.ttl }}"
+    state: "{{ _common_args.state }}"
+  register: _apply
+  when:
+    - _rt == 'CNAME'
+    - not dns_dry_run
+
+# ─── HOST ─────────────────────────────────────────────────────────────
+# `value` may be one IP or a comma-separated list. v4 vs v6 is detected
+# from the address shape, not the CSV.
+- name: "NIOS host record — line {{ row.__lineno__ }}"
+  infoblox.nios_modules.nios_host_record:
+    name: "{{ _common_args.name }}"
+    ipv4addrs: "{{ _v4 | default(omit) if _v4 | length > 0 else omit }}"
+    ipv6addrs: "{{ _v6 | default(omit) if _v6 | length > 0 else omit }}"
+    view: "{{ _common_args.view }}"
+    comment: "{{ _common_args.comment }}"
+    ttl: "{{ _common_args.ttl }}"
+    state: "{{ _common_args.state }}"
+  vars:
+    _addrs: "{{ row.value | split(',') | map('trim') | list }}"
+    _v4: "{{ _addrs | ansible.utils.ipv4 | map('community.general.dict_kv', 'ipv4addr') | list }}"
+    _v6: "{{ _addrs | ansible.utils.ipv6 | map('community.general.dict_kv', 'ipv6addr') | list }}"
+  register: _apply
+  when:
+    - _rt == 'HOST'
+    - not dns_dry_run
+
+# ─── PTR ──────────────────────────────────────────────────────────────
+- name: "NIOS PTR record — line {{ row.__lineno__ }}"
+  infoblox.nios_modules.nios_ptr_record:
+    name: "{{ _common_args.name }}"
+    ptrdname: "{{ row.value }}"
+    ipv4addr: "{{ row.extra1 | default(omit, true) }}"
+    ipv6addr: "{{ row.extra2 | default(omit, true) }}"
+    view: "{{ _common_args.view }}"
+    comment: "{{ _common_args.comment }}"
+    ttl: "{{ _common_args.ttl }}"
+    state: "{{ _common_args.state }}"
+  register: _apply
+  when:
+    - _rt == 'PTR'
+    - not dns_dry_run
+
+# ─── TXT ──────────────────────────────────────────────────────────────
+- name: "NIOS TXT record — line {{ row.__lineno__ }}"
+  infoblox.nios_modules.nios_txt_record:
+    name: "{{ _common_args.name }}"
+    text: "{{ row.value }}"
+    view: "{{ _common_args.view }}"
+    comment: "{{ _common_args.comment }}"
+    ttl: "{{ _common_args.ttl }}"
+    state: "{{ _common_args.state }}"
+  register: _apply
+  when:
+    - _rt == 'TXT'
+    - not dns_dry_run
+
+# ─── MX ───────────────────────────────────────────────────────────────
+# CSV columns: name = mail domain, value = mail exchanger host, priority = preference (0-65535)
+- name: "NIOS MX record — line {{ row.__lineno__ }}"
+  infoblox.nios_modules.nios_mx_record:
+    name: "{{ _common_args.name }}"
+    mail_exchanger: "{{ row.value }}"
+    preference: "{{ row.priority | int }}"
+    view: "{{ _common_args.view }}"
+    comment: "{{ _common_args.comment }}"
+    ttl: "{{ _common_args.ttl }}"
+    state: "{{ _common_args.state }}"
+  register: _apply
+  when:
+    - _rt == 'MX'
+    - not dns_dry_run
+
+# ───────────────────────────────────────────────────────────────────────
+#  CONTRIBUTION POINT #2 — SRV and NAPTR module calls
+#
+#  These two record types need extra fields beyond what's already
+#  mapped (priority/weight/port for SRV, order/preference/flags/
+#  services/regexp/replacement for NAPTR). Implement them below.
+#
+#  WHY THIS MATTERS: SRV and NAPTR are where DNS-from-CSV usually
+#  goes wrong — the CSV column→module-param mapping is not obvious
+#  and depends on how your team uses the spare CSV columns
+#  (extra1..extra5). Pick conventions that make the CSV easiest to
+#  read for whoever maintains it.
+#
+#  Reference modules:
+#    - infoblox.nios_modules.nios_srv_record
+#        params: name, port, priority, target, weight, view, ttl, comment, state
+#    - infoblox.nios_modules.nios_naptr_record
+#        params: name, order, preference, replacement, services, flags,
+#                regexp, view, ttl, comment, state
+#
+#  Suggested column convention (delete this comment when you decide):
+#    SRV    : value=target, priority=priority, extra1=weight, extra2=port
+#    NAPTR  : value=replacement, priority=order, extra1=preference,
+#             extra2=flags, extra3=services, extra4=regexp
+#  ─ or pick something else and document it in the role README.
+# ───────────────────────────────────────────────────────────────────────
+
+- name: "NIOS SRV record — line {{ row.__lineno__ }}"
+  infoblox.nios_modules.nios_srv_record:
+    name: "{{ _common_args.name }}"
+    # TODO: target, port, priority, weight  — see contribution point #2 above
+  register: _apply
+  when:
+    - _rt == 'SRV'
+    - not dns_dry_run
+    - false   # ← set this to `not dns_dry_run` once the args above are filled in
+
+- name: "NIOS NAPTR record — line {{ row.__lineno__ }}"
+  infoblox.nios_modules.nios_naptr_record:
+    name: "{{ _common_args.name }}"
+    # TODO: order, preference, replacement, services, flags, regexp
+  register: _apply
+  when:
+    - _rt == 'NAPTR'
+    - not dns_dry_run
+    - false   # ← set this to `not dns_dry_run` once the args above are filled in
+
+# ─── DRY RUN ──────────────────────────────────────────────────────────
+- name: "Dry-run preview (no API call) — line {{ row.__lineno__ }}"
+  ansible.builtin.debug:
+    msg:
+      record_type: "{{ _rt }}"
+      args: "{{ _common_args | combine({'value': row.value | default('')}) }}"
+  when: dns_dry_run
+
+# ─── RESULT CAPTURE ───────────────────────────────────────────────────
+- name: "Capture outcome — line {{ row.__lineno__ }}"
+  ansible.builtin.set_fact:
+    dns_results: "{{ _without + [_updated] }}"
+  vars:
+    _without: "{{ dns_results | rejectattr('row', 'equalto', row.__lineno__) | list }}"
+    _existing: "{{ (dns_results | selectattr('row', 'equalto', row.__lineno__) | list | first) }}"
+    _failed: "{{ _apply.failed | default(false) }}"
+    _changed: "{{ _apply.changed | default(false) }}"
+    _updated:
+      row: "{{ _existing.row }}"
+      record: "{{ _existing.record }}"
+      status: >-
+        {{ 'failed' if _failed
+           else 'changed' if _changed
+           else 'skipped' if dns_dry_run
+           else 'ok' }}
+      message: "{{ _apply.msg | default(_apply.failed_when_result | default('applied')) }}"

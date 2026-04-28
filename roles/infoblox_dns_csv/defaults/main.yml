@@ -1,0 +1,36 @@
+---
+# Which Infoblox platform to target. Normally injected by the AAP
+# credential type (see aap/credential_type_*.yml). Override at the
+# command line with -e infoblox_platform=nios|universal_ddi.
+infoblox_platform: nios
+
+# Path to the CSV file. Default is repo-relative so AAP project sync
+# delivers it. Override with -e dns_csv_path=/some/other/path.csv.
+dns_csv_path: "{{ playbook_dir }}/../files/dns_records.csv"
+
+# DNS view used when the CSV row leaves the `view` column blank.
+dns_default_view: default
+
+# Default TTL applied when a CSV row leaves `ttl` blank. null = inherit zone default.
+dns_default_ttl: null
+
+# When true, the role exits 0 even if some rows failed (useful for
+# reconciliation runs). Default is false: non-empty failures fail the job.
+dns_warn_only: false
+
+# Set to true to print every row's would-be parameters without
+# calling the Infoblox API. Useful for CSV review in a sandbox JT.
+dns_dry_run: false
+
+# Record types the role currently supports. Anything else in the CSV
+# becomes a row-level failure rather than a hard task failure.
+dns_supported_record_types:
+  - A
+  - AAAA
+  - CNAME
+  - HOST
+  - PTR
+  - MX
+  - SRV
+  - TXT
+  - NAPTR

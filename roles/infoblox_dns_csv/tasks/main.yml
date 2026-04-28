@@ -1,0 +1,87 @@
+---
+# Entry point: read the CSV, validate every row, dispatch to the
+# platform-specific task file, then summarise.
+#
+# Result envelope built up during the run:
+#   dns_results = [
+#     {row: <int>, record: <dict>, status: ok|changed|failed|skipped, message: <str>},
+#     ...
+#   ]
+
+- name: Initialise results envelope
+  ansible.builtin.set_fact:
+    dns_results: []
+    dns_csv_rows: []
+
+- name: Resolve and assert the CSV file is readable
+  ansible.builtin.stat:
+    path: "{{ dns_csv_path }}"
+  register: _csv_stat
+
+- name: Fail early if the CSV is missing
+  ansible.builtin.assert:
+    that:
+      - _csv_stat.stat.exists
+      - _csv_stat.stat.isreg
+    fail_msg: >-
+      CSV not found at {{ dns_csv_path }}. Set -e dns_csv_path=...
+      or commit the file to the repo at files/dns_records.csv.
+
+- name: Read CSV into a list of dicts
+  community.general.read_csv:
+    path: "{{ dns_csv_path }}"
+  register: _csv_read
+
+# Header is line 1, so the first data row is line 2. We attach the
+# source line number to every row so validation errors can quote it.
+- name: Attach 1-based source line numbers to each row
+  ansible.builtin.set_fact:
+    dns_csv_rows: "{{ dns_csv_rows + [item.0 | combine({'__lineno__': item.1})] }}"
+  loop: "{{ _csv_read.list | zip(range(2, (_csv_read.list | length) + 2)) | list }}"
+  loop_control:
+    label: "row {{ item.1 }}"
+
+# ───────────────────────────────────────────────────────────────────────
+#  CONTRIBUTION POINT #1 — see tasks/_validate_row.yml
+#  Per-row validation lives in its own file so the rules are easy to
+#  read and extend. Open that file and fill in the asserts that define
+#  what makes a CSV row valid for *your* environment.
+# ───────────────────────────────────────────────────────────────────────
+
+- name: Validate every CSV row before any API call
+  ansible.builtin.include_tasks: _validate_row.yml
+  loop: "{{ dns_csv_rows }}"
+  loop_control:
+    loop_var: row
+    label: "line {{ row.__lineno__ }} ({{ row.record_type | default('?') }} {{ row.name | default('?') }})"
+
+- name: Stop here if any row failed validation and warn-only is off
+  ansible.builtin.assert:
+    that: dns_warn_only or (dns_results | selectattr('status', 'equalto', 'failed') | list | length == 0)
+    fail_msg: |
+      One or more CSV rows failed validation. Fix the CSV and rerun.
+      Failures:
+      {{ dns_results | selectattr('status', 'equalto', 'failed') | list | to_nice_yaml }}
+
+- name: Dispatch to the platform-specific task file
+  ansible.builtin.include_tasks: "{{ infoblox_platform }}.yml"
+
+- name: Render summary report to disk
+  ansible.builtin.template:
+    src: summary.j2
+    dest: "{{ playbook_dir }}/dns_csv_summary.txt"
+    mode: "0644"
+  delegate_to: localhost
+
+- name: Print summary to job output
+  ansible.builtin.debug:
+    msg: "{{ lookup('ansible.builtin.template', 'summary.j2').splitlines() }}"
+
+- name: Fail the job if any row failed (unless dns_warn_only is set)
+  ansible.builtin.fail:
+    msg: >-
+      {{ (dns_results | selectattr('status', 'equalto', 'failed') | list | length) }}
+      of {{ dns_results | length }} row(s) failed. See dns_csv_summary.txt.
+  when:
+    - not dns_warn_only
+    - (dns_results | selectattr('status', 'equalto', 'failed') | list | length) > 0

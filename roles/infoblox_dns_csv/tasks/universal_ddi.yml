@@ -1,0 +1,13 @@
+---
+# Dispatch loop for Universal DDI platform.
+# UDDI uses ONE module (dns_record) with `type` + structured `rdata`,
+# so the per-row file handles every record type uniformly.
+
+- name: Universal DDI — apply each validated row
+  ansible.builtin.include_tasks: _uddi_record.yml
+  loop: "{{ dns_csv_rows }}"
+  loop_control:
+    loop_var: row
+    label: "line {{ row.__lineno__ }} — {{ row.record_type | upper }} {{ row.name }}"
+  when:
+    - (dns_results | selectattr('row', 'equalto', row.__lineno__) | first).status != 'failed'

@@ -1,0 +1,8 @@
+collections/ansible_collections/
+*.retry
+*.pyc
+__pycache__/
+.venv/
+.vscode/
+.idea/
+.DS_Store

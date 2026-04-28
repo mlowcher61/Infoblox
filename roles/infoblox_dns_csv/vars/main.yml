@@ -1,0 +1,8 @@
+---
+# Reserved for role-internal vars that need to override defaults but
+# shouldn't be user-tunable. Keep names prefixed with infoblox_dns_csv_
+# per ansible-lint var-naming[no-role-prefix].
+#
+# (The NIOS record-type → module mapping that previously lived here was
+# moved into tasks/_nios_record.yml as a per-type when-block, since
+# Ansible can't bind a module name from a variable in a single task.)

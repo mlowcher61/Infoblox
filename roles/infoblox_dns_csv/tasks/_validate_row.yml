@@ -1,0 +1,80 @@
+---
+# Per-row validation. Called once per CSV row from main.yml.
+# Loop var: `row` (a dict with all CSV columns + __lineno__).
+#
+# Strategy: run a series of asserts. Each failed assert appends a
+# 'failed' entry to dns_results with the line number. We never raise
+# from here — the caller decides whether to fail the whole job.
+#
+# Convention: validation only — no API calls, no mutations.
+
+- name: "Required columns are present — line {{ row.__lineno__ }}"
+  ansible.builtin.set_fact:
+    _row_errors: "{{ _row_errors | default([]) + [item] }}"
+  loop:
+    - "{{ 'record_type missing' if not row.record_type | default('') else '' }}"
+    - "{{ 'name missing' if not row.name | default('') else '' }}"
+    - "{{ 'state must be present|absent' if (row.state | default('present')) not in ['present', 'absent'] else '' }}"
+    - >-
+      {{ 'record_type ' ~ row.record_type ~ ' not in dns_supported_record_types'
+         if (row.record_type | default('') | upper) not in dns_supported_record_types
+         else '' }}
+  when: item != ''
+
+# ─────────────────────────────────────────────────────────────────────
+#  CONTRIBUTION POINT #1
+#
+#  Below is the per-record-type validation block. It currently checks
+#  ONLY the A record. Add the asserts your environment needs for the
+#  other record types you care about.
+#
+#  WHY THIS MATTERS: garbage-in == bad DNS in production. The role is
+#  only as safe as these checks. Catching a bad ipv6addr in CSV
+#  validation costs nothing; catching it after a partial run means
+#  someone is paging the on-call.
+#
+#  Things to consider:
+#    - A      → value must look like an IPv4 (ansible.utils.ipv4 filter)
+#    - AAAA   → value must look like an IPv6
+#    - CNAME  → value must be a hostname (no leading dot, no spaces)
+#    - PTR    → name must end in .in-addr.arpa or .ip6.arpa
+#    - MX     → priority must be int 0-65535, value must be a hostname
+#    - SRV    → priority/weight/port must be ints, target must be a hostname
+#    - TXT    → value can be anything but should be quoted in the CSV
+#    - NAPTR  → order/preference are ints, flags is a single letter
+#    - HOST   → value can be IPv4 OR IPv6 (or a comma-separated list)
+#
+#  The example for A is below — match its shape for the rest.
+#  Append failures to _row_errors; do NOT call ansible.builtin.fail.
+# ─────────────────────────────────────────────────────────────────────
+
+- name: "A-record value must be IPv4 — line {{ row.__lineno__ }}"
+  ansible.builtin.set_fact:
+    _row_errors: "{{ _row_errors | default([]) + ['value ' ~ row.value ~ ' is not a valid IPv4 address'] }}"
+  when:
+    - (row.record_type | default('') | upper) == 'A'
+    - row.value | default('') | ansible.utils.ipv4 | length == 0
+
+# TODO: add a similar block for AAAA (use the ansible.utils.ipv6 filter)
+# TODO: add a block for CNAME asserting `value` looks like a hostname
+# TODO: add a block for PTR asserting `name` ends in arpa
+# TODO: add a block for MX asserting `priority` is an int 0..65535
+# TODO: add a block for SRV asserting priority/weight/port are ints
+# TODO: add a block for HOST allowing IPv4 OR IPv6 in `value`
+# TODO: add a block for NAPTR asserting order/preference are ints
+# (delete the TODOs once the corresponding block is in place)
+
+- name: "Record validation outcome — line {{ row.__lineno__ }}"
+  ansible.builtin.set_fact:
+    dns_results: "{{ dns_results + [_outcome] }}"
+  vars:
+    _errs: "{{ _row_errors | default([]) }}"
+    _outcome:
+      row: "{{ row.__lineno__ }}"
+      record: "{{ row }}"
+      status: "{{ 'failed' if _errs | length > 0 else 'pending' }}"
+      message: "{{ _errs | join('; ') if _errs | length > 0 else 'validation passed' }}"
+
+- name: "Clear per-row error accumulator — line {{ row.__lineno__ }}"
+  ansible.builtin.set_fact:
+    _row_errors: []

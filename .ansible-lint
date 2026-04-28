@@ -1,0 +1,20 @@
+---
+# Project lint policy.
+#
+# We skip var-naming[no-role-prefix] because:
+#   1. `infoblox_platform` is set by both AAP credential types
+#      (see aap/credential_type_*.yml) and is intentionally shared
+#      across the role pair — prefixing it with infoblox_dns_csv_
+#      would break that contract.
+#   2. The other public knobs (dns_csv_path, dns_dry_run, etc.) are
+#      deliberately short so operators can pass them on the
+#      `ansible-playbook -e` line and as AAP job-template extra-vars
+#      without a 25-character prefix.
+# All vars live in defaults/main.yml so they're still self-documenting.
+
+skip_list:
+  - var-naming[no-role-prefix]
+
+exclude_paths:
+  - collections/ansible_collections/
+  - .venv/

@@ -1,0 +1,99 @@
+---
+# Apply ONE validated CSV row against Universal DDI.
+#
+# UDDI's `dns_record` module wants:
+#   type:   "A" | "AAAA" | "CNAME" | "MX" | "PTR" | "SRV" | "TXT" | "NAPTR"
+#   rdata:  type-specific dict (e.g. {"address": "10.0.0.5"} for A)
+#   name_in_zone, zone, view, ttl, comment, state
+#
+# We build `_rdata` per record type below, then call the module once.
+
+- name: "Derive name_in_zone and zone for UDDI — line {{ row.__lineno__ }}"
+  ansible.builtin.set_fact:
+    _rt: "{{ row.record_type | upper }}"
+    _zone: "{{ row.zone | default('', true) }}"
+    _name_in_zone: >-
+      {{ (row.name | regex_replace('\\.' ~ (row.zone | default('', true) | regex_escape) ~ '$', ''))
+         if row.zone | default('', true) else row.name }}
+
+# ───────────────────────────────────────────────────────────────────────
+#  UDDI rdata shape per record type (per collection module docs):
+#    A      : {address: "<ipv4>"}
+#    AAAA   : {address: "<ipv6>"}
+#    CNAME  : {cname: "<fqdn>"}
+#    PTR    : {dname: "<fqdn>"}
+#    TXT    : {text: ["<string>"]}            ← list, not scalar
+#    MX     : {preference: <int>, exchange: "<fqdn>"}
+#    SRV    : {priority: <int>, weight: <int>, port: <int>, target: "<fqdn>"}
+#    NAPTR  : {order: <int>, preference: <int>, flags: "<chars>",
+#              services: "<svc>", regexp: "<re>", replacement: "<fqdn>"}
+#  HOST records aren't a UDDI concept — they map to A (and AAAA) records
+#  with the same name_in_zone. We handle that below by emitting the A
+#  variant; if you need the AAAA half, add a second CSV row.
+# ───────────────────────────────────────────────────────────────────────
+
+- name: "Build UDDI rdata — line {{ row.__lineno__ }}"
+  ansible.builtin.set_fact:
+    _rdata: >-
+      {{
+        {'A':     {'address': row.value},
+         'AAAA':  {'address': row.value},
+         'CNAME': {'cname':   row.value},
+         'PTR':   {'dname':   row.value},
+         'TXT':   {'text':    [row.value]},
+         'MX':    {'preference': row.priority | default(10) | int,
+                   'exchange':   row.value},
+         'HOST':  {'address': row.value | split(',') | first},
+         'SRV':   {'priority': row.priority | default(0)  | int,
+                   'weight':   row.extra1   | default(0)  | int,
+                   'port':     row.extra2   | default(0)  | int,
+                   'target':   row.value},
+         'NAPTR': {'order':       row.priority | default(0) | int,
+                   'preference':  row.extra1   | default(0) | int,
+                   'flags':       row.extra2   | default(''),
+                   'services':    row.extra3   | default(''),
+                   'regexp':      row.extra4   | default(''),
+                   'replacement': row.value}
+        }[_rt]
+      }}
+    _type_for_module: "{{ 'A' if _rt == 'HOST' else _rt }}"
+
+- name: "Dry-run preview (no API call) — line {{ row.__lineno__ }}"
+  ansible.builtin.debug:
+    msg:
+      record_type: "{{ _type_for_module }}"
+      name_in_zone: "{{ _name_in_zone }}"
+      zone: "{{ _zone }}"
+      rdata: "{{ _rdata }}"
+  when: dns_dry_run
+
+- name: "UDDI dns_record — line {{ row.__lineno__ }}"
+  infoblox.universal_ddi.dns_record:
+    type: "{{ _type_for_module }}"
+    name_in_zone: "{{ _name_in_zone }}"
+    zone: "{{ _zone }}"
+    rdata: "{{ _rdata }}"
+    view: "{{ row.view | default(dns_default_view, true) }}"
+    ttl: "{{ row.ttl | default(dns_default_ttl, true) | default(omit, true) }}"
+    comment: "{{ row.comment | default(omit, true) }}"
+    state: "{{ row.state | default('present', true) }}"
+  register: _apply
+  when: not dns_dry_run
+
+- name: "Capture outcome — line {{ row.__lineno__ }}"
+  ansible.builtin.set_fact:
+    dns_results: "{{ _without + [_updated] }}"
+  vars:
+    _without: "{{ dns_results | rejectattr('row', 'equalto', row.__lineno__) | list }}"
+    _existing: "{{ (dns_results | selectattr('row', 'equalto', row.__lineno__) | list | first) }}"
+    _failed: "{{ _apply.failed | default(false) }}"
+    _changed: "{{ _apply.changed | default(false) }}"
+    _updated:
+      row: "{{ _existing.row }}"
+      record: "{{ _existing.record }}"
+      status: >-
+        {{ 'failed' if _failed
+           else 'changed' if _changed
+           else 'skipped' if dns_dry_run
+           else 'ok' }}
+      message: "{{ _apply.msg | default('applied') }}"

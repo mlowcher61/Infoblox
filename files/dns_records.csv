@@ -1,0 +1,12 @@
+record_type,name,zone,view,ttl,state,value,priority,extra1,extra2,extra3,extra4,extra5,comment
+A,web01.example.com,example.com,default,3600,present,10.10.0.10,,,,,,,Primary web server
+A,web02.example.com,example.com,default,3600,present,10.10.0.11,,,,,,,Secondary web server
+AAAA,web01.example.com,example.com,default,3600,present,2001:db8::10,,,,,,,IPv6 for primary web
+CNAME,www.example.com,example.com,default,3600,present,web01.example.com,,,,,,,WWW alias
+HOST,db01.example.com,example.com,default,3600,present,"10.10.1.20,2001:db8::20",,,,,,,DB host (dual-stack)
+PTR,10.0.10.10.in-addr.arpa,,default,3600,present,web01.example.com,,,,,,,Reverse for web01
+TXT,_dmarc.example.com,example.com,default,3600,present,"v=DMARC1; p=quarantine; rua=mailto:dmarc@example.com",,,,,,,DMARC policy
+MX,example.com,example.com,default,3600,present,mail01.example.com,10,,,,,,Primary MX
+MX,example.com,example.com,default,3600,present,mail02.example.com,20,,,,,,Backup MX
+SRV,_sip._tcp.example.com,example.com,default,3600,present,sip01.example.com,10,5,5060,,,,SIP service
+NAPTR,example.com,example.com,default,3600,present,_sip._udp.example.com,100,10,U,"E2U+sip","!^.*$!sip:info@example.com!",,,SIP NAPTR

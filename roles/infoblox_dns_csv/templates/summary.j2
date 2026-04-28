@@ -1,0 +1,34 @@
+================================================================================
+  Infoblox DNS-from-CSV — run summary
+  Platform : {{ infoblox_platform }}
+  CSV file : {{ dns_csv_path }}
+  Mode     : {% if dns_dry_run %}DRY RUN{% else %}APPLY{% endif %}{% if dns_warn_only %} (warn-only){% endif %}
+
+================================================================================
+
+Totals:
+  total       : {{ dns_results | length }}
+  ok          : {{ dns_results | selectattr('status','equalto','ok')      | list | length }}
+  changed     : {{ dns_results | selectattr('status','equalto','changed') | list | length }}
+  skipped     : {{ dns_results | selectattr('status','equalto','skipped') | list | length }}
+  failed      : {{ dns_results | selectattr('status','equalto','failed')  | list | length }}
+
+{% set failures = dns_results | selectattr('status','equalto','failed') | list %}
+{% if failures %}
+Failures
+--------
+{% for f in failures %}
+  line {{ f.row }}  {{ f.record.record_type | default('?') | upper }}  {{ f.record.name | default('?') }}
+      {{ f.message }}
+{% endfor %}
+{% endif %}
+
+{% set changes = dns_results | selectattr('status','equalto','changed') | list %}
+{% if changes %}
+Changes applied
+---------------
+{% for c in changes %}
+  line {{ c.row }}  {{ c.record.record_type | upper }}  {{ c.record.name }} → {{ c.record.value | default('') }}
+{% endfor %}
+{% endif %}
+================================================================================

@@ -1,0 +1,37 @@
+---
+# AAP job-template entrypoint.
+#
+# Attach exactly ONE of:
+#   - "Infoblox NIOS Grid"        (custom credential type)
+#   - "Infoblox Universal DDI"    (custom credential type)
+#
+# The credential type injects `infoblox_platform` automatically.
+#
+# Optional job-template variables:
+#   dns_csv_path       — override path to CSV (defaults to repo file)
+#   dns_dry_run        — true/false (default false)
+#   dns_warn_only      — true/false (default false)
+#   dns_default_view   — DNS view name (default "default")
+
+- name: Manage Infoblox DNS records from CSV
+  hosts: localhost
+  gather_facts: false
+  connection: local
+
+  vars:
+    # Use the CSV that ships with the project unless overridden.
+    dns_csv_path: "{{ playbook_dir }}/../files/dns_records.csv"
+
+  pre_tasks:
+    - name: Assert a credential was attached (infoblox_platform was set)
+      ansible.builtin.assert:
+        that:
+          - infoblox_platform is defined
+          - infoblox_platform in ['nios', 'universal_ddi']
+        fail_msg: |
+          No Infoblox credential attached to this job template.
+          Attach either the "Infoblox NIOS Grid" or
+          "Infoblox Universal DDI" custom credential.
+
+  roles:
+    - role: infoblox_dns_csv
