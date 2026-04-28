@@ -88,7 +88,19 @@ gate. Schema is documented in [`roles/infoblox_dns_csv/README.md`](roles/infoblo
 - [x] Repo skeleton, ansible.cfg, requirements, EE, inventory
 - [x] Both AAP credential types
 - [x] Validation + dispatch + summary
-- [x] NIOS modules wired for A, AAAA, CNAME, HOST, PTR, TXT, MX
-- [ ] **Contribution point #1** — extend per-record-type validation in `roles/infoblox_dns_csv/tasks/_validate_row.yml`
-- [ ] **Contribution point #2** — wire SRV + NAPTR in `roles/infoblox_dns_csv/tasks/_nios_record.yml`
+- [x] NIOS modules wired for A, AAAA, CNAME, HOST, PTR, TXT, MX, SRV, NAPTR
 - [x] UDDI: all record types routed through `dns_record`
+- [x] Per-record-type validation rules for A, AAAA, CNAME, PTR, MX, SRV, HOST, NAPTR
+
+## Column convention for multi-field record types
+
+The validator and the NIOS dispatch agree on the same `extra1..extra5` mapping, so SRV and NAPTR rows are unambiguous:
+
+| Type  | `name`      | `value`       | `priority` | `extra1`     | `extra2` | `extra3`   | `extra4`   |
+|-------|-------------|---------------|------------|--------------|----------|------------|------------|
+| SRV   | service FQDN | target host   | priority   | weight       | port     | —          | —          |
+| NAPTR | NAPTR FQDN  | replacement   | order      | preference   | flags    | services   | regexp     |
+| MX    | mail domain | exchanger     | preference | —            | —        | —          | —          |
+| PTR   | reverse FQDN | ptrdname     | —          | ipv4addr*    | ipv6addr*| —          | —          |
+
+\* PTR `extra1`/`extra2` are optional — only set them if you want to pin the explicit forward IP on the record.

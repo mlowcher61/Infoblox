@@ -128,52 +128,45 @@
     - _rt == 'MX'
     - not dns_dry_run
 
-# ───────────────────────────────────────────────────────────────────────
-#  CONTRIBUTION POINT #2 — SRV and NAPTR module calls
-#
-#  These two record types need extra fields beyond what's already
-#  mapped (priority/weight/port for SRV, order/preference/flags/
-#  services/regexp/replacement for NAPTR). Implement them below.
-#
-#  WHY THIS MATTERS: SRV and NAPTR are where DNS-from-CSV usually
-#  goes wrong — the CSV column→module-param mapping is not obvious
-#  and depends on how your team uses the spare CSV columns
-#  (extra1..extra5). Pick conventions that make the CSV easiest to
-#  read for whoever maintains it.
-#
-#  Reference modules:
-#    - infoblox.nios_modules.nios_srv_record
-#        params: name, port, priority, target, weight, view, ttl, comment, state
-#    - infoblox.nios_modules.nios_naptr_record
-#        params: name, order, preference, replacement, services, flags,
-#                regexp, view, ttl, comment, state
-#
-#  Suggested column convention (delete this comment when you decide):
-#    SRV    : value=target, priority=priority, extra1=weight, extra2=port
-#    NAPTR  : value=replacement, priority=order, extra1=preference,
-#             extra2=flags, extra3=services, extra4=regexp
-#  ─ or pick something else and document it in the role README.
-# ───────────────────────────────────────────────────────────────────────
-
+# ─── SRV ──────────────────────────────────────────────────────────────
+# Column convention (matches asserts in tasks/_validate_row.yml):
+#   value=target, priority=priority, extra1=weight, extra2=port
 - name: "NIOS SRV record — line {{ row.__lineno__ }}"
   infoblox.nios_modules.nios_srv_record:
     name: "{{ _common_args.name }}"
-    # TODO: target, port, priority, weight  — see contribution point #2 above
+    target: "{{ row.value }}"
+    priority: "{{ row.priority | int }}"
+    weight: "{{ row.extra1 | int }}"
+    port: "{{ row.extra2 | int }}"
+    view: "{{ _common_args.view }}"
+    comment: "{{ _common_args.comment }}"
+    ttl: "{{ _common_args.ttl }}"
+    state: "{{ _common_args.state }}"
   register: _apply
   when:
     - _rt == 'SRV'
     - not dns_dry_run
-    - false   # ← set this to `not dns_dry_run` once the args above are filled in
 
+# Column convention (matches asserts in tasks/_validate_row.yml):
+#   value=replacement, priority=order, extra1=preference,
+#   extra2=flags, extra3=services, extra4=regexp
 - name: "NIOS NAPTR record — line {{ row.__lineno__ }}"
   infoblox.nios_modules.nios_naptr_record:
     name: "{{ _common_args.name }}"
-    # TODO: order, preference, replacement, services, flags, regexp
+    order: "{{ row.priority | int }}"
+    preference: "{{ row.extra1 | int }}"
+    flags: "{{ row.extra2 | default(omit, true) }}"
+    services: "{{ row.extra3 | default(omit, true) }}"
+    regexp: "{{ row.extra4 | default(omit, true) }}"
+    replacement: "{{ row.value }}"
+    view: "{{ _common_args.view }}"
+    comment: "{{ _common_args.comment }}"
+    ttl: "{{ _common_args.ttl }}"
+    state: "{{ _common_args.state }}"
   register: _apply
   when:
     - _rt == 'NAPTR'
     - not dns_dry_run
-    - false   # ← set this to `not dns_dry_run` once the args above are filled in
 
 # ─── DRY RUN ──────────────────────────────────────────────────────────
 - name: "Dry-run preview (no API call) — line {{ row.__lineno__ }}"
