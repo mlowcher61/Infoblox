@@ -22,9 +22,13 @@ Supports both Infoblox platforms via two custom AAP credential types:
 ├── playbooks/manage_dns.yml           ← AAP job-template entrypoint
 ├── files/dns_records.csv              ← THE DATA — edit via PR
 ├── execution-environment/             ← EE definition for ansible-builder
-├── aap/                               ← custom credential type YAMLs to import
-│   ├── credential_type_nios.yml
-│   └── credential_type_universal_ddi.yml
+├── aap/                               ← AAP platform integration
+│   ├── credential_type_nios.yml       ← custom credential type (UI-import or CaC)
+│   ├── credential_type_universal_ddi.yml
+│   └── cac/                           ← Config-as-Code (ansible.platform)
+│       ├── README.md                  ← CaC usage + secret-store explanation
+│       ├── configure_aap.yml          ← provisions every non-secret AAP object
+│       └── group_vars/all/            ← aap.yml, objects.yml
 └── roles/
     └── infoblox_dns_csv/              ← the role doing the work
         ├── README.md                  ← role-level docs (CSV schema, vars, flow)
@@ -55,10 +59,39 @@ Supports both Infoblox platforms via two custom AAP credential types:
 
 ## Bootstrapping AAP
 
+Two paths — pick one:
+
+### Option A: Config-as-Code (recommended)
+
+Provisions every AAP object — Org, EE, Project, Inventory, both custom
+credential types, and the job template — in one idempotent playbook
+run. Secret values stay in AAP's own encrypted credential store; this
+repo never sees them. See [`aap/cac/README.md`](aap/cac/README.md) for
+the full guide.
+
+```sh
+ansible-galaxy collection install -r collections/requirements.yml
+export CONTROLLER_HOST=https://aap.example.com
+export CONTROLLER_OAUTH_TOKEN=********
+$EDITOR aap/cac/group_vars/all/objects.yml   # set EE image + Git URL
+ansible-playbook aap/cac/configure_aap.yml
+```
+
+Then, **once**, create your Infoblox credentials in the AAP UI
+(*Resources → Credentials → Add* → pick the "Infoblox NIOS Grid" or
+"Infoblox Universal DDI" type the playbook just installed). The job
+template prompts the operator to pick one at launch.
+
+You'll still need to **build the EE** from
+`execution-environment/execution-environment.yml`
+(`ansible-builder build -t infoblox-ee:latest …`) and push it to a
+registry that AAP can pull from — CaC then registers it.
+
+### Option B: Click-ops in the UI
+
 1. **Add this repo as a Project** (Source Control → Git → this repo URL).
-2. **Build/import the EE** from `execution-environment/execution-environment.yml`
-   (`ansible-builder build -t infoblox-ee:latest …`), push to your registry,
-   register it in AAP under *Execution Environments*.
+2. **Build/import the EE** from `execution-environment/execution-environment.yml`,
+   push to your registry, register it in AAP under *Execution Environments*.
 3. **Import both credential types** under *Administration → Credential Types →
    Import* using the two YAML files in `aap/`.
 4. **Create credentials** of those types — one per Infoblox endpoint.

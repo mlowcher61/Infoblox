@@ -1,0 +1,34 @@
+---
+# AAP objects to provision. Edit names, image registry, and Git URL to
+# match your environment. Re-runs are idempotent (modules upsert by name).
+
+aap_organization:
+  name: Infoblox DNS
+  description: Owner of the Infoblox DNS-from-CSV automation.
+
+aap_execution_environment:
+  name: Infoblox EE
+  # TODO: replace with the registry path you pushed your built EE to.
+  # Build def: execution-environment/execution-environment.yml.
+  image: registry.example.com/infoblox-ee:latest
+  pull: missing
+
+aap_project:
+  name: Infoblox DNS-from-CSV
+  # TODO: replace with the Git URL of THIS repository in your SCM.
+  scm_url: https://github.com/your-org/infoblox-dns-csv.git
+  scm_branch: main
+  scm_update_on_launch: true
+
+aap_inventory:
+  name: Infoblox DNS (localhost)
+  description: Localhost — the role drives Infoblox APIs, not managed nodes.
+
+aap_job_template:
+  name: Manage Infoblox DNS records from CSV
+  ask_credential_on_launch: true   # operator picks NIOS or UDDI at launch
+  ask_variables_on_launch: true    # allow dns_dry_run / dns_warn_only / etc.
+  extra_vars: {}
+  # If you want a credential pre-attached instead of prompting, list it here
+  # by name (must match an entry created by aap_credentials):
+  credentials: []

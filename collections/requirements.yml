@@ -8,3 +8,8 @@ collections:
     version: ">=2.0.0"
   - name: community.general
     version: ">=8.0.0"
+  # AAP Config-as-Code (Gateway Configuration). Used by aap/cac/configure_aap.yml
+  # to provision Org/EE/Project/Inventory/Credential Types/JT. (Credential
+  # *instances* live in AAP's own encrypted store, not Git.)
+  - name: ansible.platform
+    version: ">=2.5.0"
